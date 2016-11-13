@@ -1,0 +1,162 @@
+#!/bin/bash
+
+
+
+
+
+#set -x
+#set -v
+set -u
+
+sleep 1 # а куда спешить?
+
+# имя для скачаной картинки
+declare -r FILENAME='image-today'
+
+# каталог для сохранения
+declare -r CACHEDIR="${HOME}/.cache/Yandex.Image"
+mkdir -p "${CACHEDIR}" # создать, если нужно
+
+declare -r WALLPAPERFILE="${CACHEDIR}/${FILENAME}"
+
+# размер монитора
+declare -r SCRSIZE='1920x1200'
+
+# URL на картинку
+declare -r IMGURL="yandex.ru/images/today?size=${SCRSIZE}"
+
+#
+declare -r TMPFILE=$(tempfile)
+
+#
+declare -r CACHENAMEFILE="${CACHEDIR}/name"
+
+# Исходное имя файла-картинки, будет установлен в check_that_new()
+declare contentName=''
+
+
+declare -r BIRTHMARK='Lumen.gnu/yandex_image_of_day'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Перебрать все запланированые задания
+# и удалить все с меткой ${BIRTHMARK}
+for jobID in $(atq | cut -f1)
+do
+	## FIXME дужки точно нужны???
+	( at -c "${jobID}" | grep -q "${BIRTHMARK}" ) && atrm "${jobID}"
+done
+
+
+## TODO проверять параметры, параметр --stop должен завершать
+# работу сценария в этом месте
+
+
+
+
+
+
+
+
+
+# Скачать картинку и установить как обои
+# в случаее успеха вернет 0
+# TODO использовать dconf вместо gsettings
+function setup_wallpaper
+{
+	# скачать картинку во временный файл
+	# потом переместь в кеш-паку пользователя под именем $WALLPAPERFILE
+	# потом сделать ее фоном рабочего стола
+
+	wget "${IMGURL}" -q -O "${TMPFILE}" && \
+	  mv "${TMPFILE}" "${WALLPAPERFILE}" && \
+	  gsettings set org.gnome.desktop.background picture-options "zoom" && \
+	  gsettings set org.gnome.desktop.background picture-uri "file://${WALLPAPERFILE}"
+	local -i ERRVAL=${?}
+
+	rm -f "${TMPFILE}"
+
+	return $ERRVAL
+}
+
+
+# проверка работоспособности интернета
+# (точнее сайта yandex.ru)
+# возвращает 0 если ОК
+function check_internet
+{
+	ping -c 1 'yandex.ru' &>/dev/null
+	local -i ERRVAL=${?}
+
+	return $ERRVAL
+}
+
+
+
+# проверка есть новая картинка
+# вернет 0 если есть новая
+# contentName - устанавливается здесь
+function check_that_new
+{
+	# узнать название доступной картинки
+	contentName=$(curl -sI "${IMGURL}" | \
+	  grep -o 'filename=\S*' | cut -d= -f2 )
+
+	# считать сохраненное название картинки используемой сейчас
+	local -r usedNowName=$(cat "${CACHENAMEFILE}" 2>/dev/null )
+
+	# вернуть 0 если названия не совпадают
+	[[ "${contentName}" != "${usedNowName}" ]]
+	return ${?}
+}
+
+
+
+# запланировать запуск на указанное время
+function schedule_run
+{
+	at "${1}" &>/dev/null <<- _text_
+	# ${BIRTHMARK}
+	$(readlink -f "${0}")
+	_text_
+}
+
+
+
+
+# если yandex не пингуется значить нет интернета
+# значит счас делать нечего, откладываем загрузку на потом.
+if check_internet
+then
+	if check_that_new
+	then # есть новая картинка
+
+		if setup_wallpaper
+		then
+
+			echo "${contentName}" > "${CACHENAMEFILE}"
+		else
+			schedule_run now+30min #< TODO не больше 3 раз
+		fi
+	fi
+	schedule_run "22:01UTC"
+else
+
+	# следующий запуск через 3 часа
+	schedule_run now+3hour #< TODO не больше 3 раз
+
+fi
+
+
+exit 0
