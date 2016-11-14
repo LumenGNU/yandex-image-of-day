@@ -42,7 +42,8 @@ declare -r BIRTHMARK='Lumen.gnu/yandex_image_of_day'
 
 
 
-
+########
+echo "start  $(date)" >> $HOME/at.log
 
 
 
@@ -126,7 +127,7 @@ function check_that_new
 # запланировать запуск на указанное время
 function schedule_run
 {
-	at "${1}" &>/dev/null <<- _text_
+	DISPLAY=:0 at "${1}" &>/dev/null <<- _text_
 	# ${BIRTHMARK}
 	$(readlink -f "${0}")
 	_text_
@@ -150,6 +151,7 @@ then
 			schedule_run now+30min #< TODO не больше 3 раз
 		fi
 	fi
+
 	schedule_run "22:01UTC"
 else
 
